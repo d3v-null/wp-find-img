@@ -16,16 +16,30 @@ def main():
         required=True
     )
 
-    args = argParser.parse_args()
+    argParser.add_argument('--img_store',
+        help="location on disk where images are stored",
+        required=True
+    )
+
     spider_args = {}
     crawler_settings = {
+        'IMAGES_URLS_FIELD':'image_urls',
+        'IMAGES_RESULT_FIELD':'images',
+        'IMAGES_THUMBS':{
+            'smol': (9,8)
+        },
         'ITEM_PIPELINES':{
-            'wp_find_img.pipelines.DuplicatesPipeline': 100,
-            'wp_find_img.pipelines.JsonWriterPipeline': 200
+            'wp_find_img.pipelines.ImageHashesPipeline': 100,
+            'wp_find_img.pipelines.DisplayDHashTablePipeline': 200,
+            'wp_find_img.pipelines.JsonWriterPipeline': 200,
         }
     }
+    args = argParser.parse_args()
     if args:
-        spider_args['start_urls'] = args.start_urls.split(',')
+        if args.start_urls:
+            spider_args['start_urls'] = args.start_urls.split(',')
+        if args.img_store:
+            crawler_settings['IMAGES_STORE'] = args.img_store
 
     process = CrawlerProcess(crawler_settings)
     process.crawl(ImgSpider, **spider_args)

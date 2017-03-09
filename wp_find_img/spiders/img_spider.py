@@ -7,14 +7,19 @@ from scrapy.spiders import Rule
 from context import wp_find_img
 from wp_find_img.helpers import URLHelpers
 
-class ImgItem(scrapy.Item):
-    src = scrapy.Field()
+# class ImgItem(scrapy.Item):
+#     src = scrapy.Field()
+#
+# class LinkItem(scrapy.Item):
+#     url = scrapy.Field()
+#     text = scrapy.Field()
+#     fragment = scrapy.Field()
+#     nofollow = scrapy.Field()
 
-class LinkItem(scrapy.Item):
-    url = scrapy.Field()
-    text = scrapy.Field()
-    fragment = scrapy.Field()
-    nofollow = scrapy.Field()
+class ImgPageItem(scrapy.Item):
+    image_urls = scrapy.Field()
+    images = scrapy.Field()
+    page_url = scrapy.Field()
 
 IMG_EXTENSIONS = [
     'mng', 'pct', 'bmp', 'gif', 'jpg', 'jpeg', 'png', 'pst', 'psp', 'tif',
@@ -46,7 +51,7 @@ class ImgSpider(CrawlSpider):
 
         self.aLinkExtractor = LinkExtractor(
             # allow_domains=self.allowed_domains,
-            deny=['/wp-json/'],
+            # deny=['/wp-json/'],
             process_value=URLHelpers.no_dynamic,
         )
 
@@ -59,7 +64,7 @@ class ImgSpider(CrawlSpider):
         )
 
         self.rules = (
-            Rule(self.aLinkExtractor, callback='parse_page'),
+            Rule(self.aLinkExtractor, callback='parse_page', follow=True),
             # Rule(self.imgLinkExtractor, callback='parse_page'),
         )
 
@@ -82,10 +87,28 @@ class ImgSpider(CrawlSpider):
 
     def parse_page(self, response):
         self.log("processing link: {response}".format(response=response))
+        img_links = []
         for link in self.imgLinkExtractor.extract_links(response):
             self.log("extractor found image: {link}".format(link=link))
-            yield ImgItem(src=link.url)
+            if link.url:
+                within_domains = map(
+                    lambda domain: URLHelpers.within_domain(link.url, domain),
+                    self.allowed_domains
+                )
+                if any(within_domains):
+                    self.logger.debug("{url} is within allowed domains: {domains}".format(
+                        url=link.url, domains=self.allowed_domains
+                    )),
 
+                    img_links.append(link.url)
+                else:
+                    self.logger.debug("{url} is not within allowed domains: {domains}".format(
+                        url=link.url, domains=self.allowed_domains
+                    ))
+
+        if img_links:
+            final_url = response.url
+            yield ImgPageItem(page_url=final_url, image_urls=img_links)
 
     # def parse_img(self, url):
     #     item = ImgItem(
