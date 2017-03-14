@@ -1,5 +1,6 @@
 # -*- coding: utf-8 -*-
 
+import os
 import functools
 import hashlib
 import logging
@@ -14,14 +15,18 @@ except ImportError:
 
 from PIL import Image
 from tabulate import tabulate
+from requests import Request
 
 from scrapy.utils.misc import md5sum
+from scrapy.utils.python import to_bytes
 from scrapy.exceptions import DropItem
 from scrapy.settings import Settings
 from scrapy.pipelines.images import ImagesPipeline
 from scrapy.pipelines.images import NoimagesDrop, ImageException
+from scrapy.pipelines.media import MediaPipeline
 
 import helpers
+import db
 
 class JsonWriterPipeline(object):
 
@@ -73,21 +78,26 @@ class ImageHashesPipeline(ImagesPipeline):
         #     self.IMAGES_TARGET_MODE
         # )
 
-        self.dhash_store = {}
+        self.url_meta = {}
 
     def image_downloaded(self, response, request, info):
-        checksum = None
-        for path, image, buf in self.get_image(response, request, info):
-            if checksum is None:
-                buf.seek(0)
-                checksum = md5sum(buf)
-            width, height = image.size
-            self.store.persist_file(
-                path, buf, info,
-                meta={'width': width, 'height': height},
-                headers={'Content-Type': 'image/jpeg'})
-            dhash = helpers.dhash(image, hash_size = 16)
-            self.dhash_store[checksum] = dhash
+        path, image, buf = self.get_image(response, request, info)
+        width, height = image.size
+        self.store.persist_file(
+            path, buf, info,
+            meta={'width': width, 'height': height},
+            headers={'Content-Type': 'image/jpeg'})
+        buf.seek(0)
+        checksum = md5sum(buf)
+        buf.seek(0, os.SEEK_END)
+        bufflen = buf.tell()
+        dhash = helpers.dhash(image, hash_size = 16)
+        url = request.url
+        if not url in self.url_meta:
+            self.url_meta[url] = {}
+        self.url_meta[url]['dhash'] = dhash
+        self.url_meta[url]['bufflen'] = bufflen
+        self.url_meta[url]['dimensions'] = (width, height)
         return checksum
 
     def get_image(self, response, request, info):
@@ -101,7 +111,7 @@ class ImageHashesPipeline(ImagesPipeline):
                                  (width, height, self.min_width, self.min_height))
 
         image, buf = self.convert_image(orig_image)
-        yield path, image, buf
+        return path, image, buf
 
         # for thumb_id, size in six.iteritems(self.thumbs):
         #     thumb_path = self.thumb_path(request, thumb_id, response=response, info=info)
@@ -136,10 +146,12 @@ class ImageHashesPipeline(ImagesPipeline):
         if not image_paths:
             raise DropItem("Item contains no images")
         for image_info in image_paths:
-            if 'checksum' in image_info:
-                checksum = image_info.get('checksum', None)
-                if checksum in self.dhash_store:
-                    image_info['dhash'] = self.dhash_store[checksum]
+            if 'url' in image_info:
+                url = image_info.get('url', None)
+                if url in self.url_meta:
+                    image_info['dhash'] = self.url_meta[url].get('dhash')
+                    image_info['bufflen'] = self.url_meta[url].get('bufflen')
+                    image_info['dimensions'] = self.url_meta[url].get('dimensions')
         item[self.images_result_field] = image_paths
         return item
 
@@ -171,4 +183,63 @@ class DisplayDHashTablePipeline(object):
             img_url = image.get('url')
             img_dhash = image.get('dhash')
             self.hashes.append(self.DHashTableEntry(page_url, img_url, img_dhash))
+        return item
+
+class StoreDHashPipeline(object):
+    """ Stores new DHashes in the database """
+
+    DB_STORE = 'hashes.sqlite'
+
+    def __init__(self, *args, **kwargs):
+        super(StoreDHashPipeline, self).__init__(*args, **kwargs)
+
+        settings = kwargs.get('settings', None)
+
+        if isinstance(settings, dict) or settings is None:
+            settings = Settings(settings)
+
+        resolve = functools.partial(self._key_for_pipe,
+            base_class_name="ImageHashesPipeline",
+            settings=settings
+        )
+
+        self.db_store = settings.get(
+            resolve('DB_STORE'),
+            self.DB_STORE
+        )
+
+        self.db = db.DBWrapper(self.db_store)
+
+    def _key_for_pipe(self, key, base_class_name=None,
+                      settings=None):
+        """
+        >>> MediaPipeline()._key_for_pipe("IMAGES")
+        'IMAGES'
+        >>> class MyPipe(MediaPipeline):
+        ...     pass
+        >>> MyPipe()._key_for_pipe("IMAGES", base_class_name="MediaPipeline")
+        'MYPIPE_IMAGES'
+        """
+        class_name = self.__class__.__name__
+        formatted_key = "{}_{}".format(class_name.upper(), key)
+        if class_name == base_class_name or not base_class_name \
+            or (settings and not settings.get(formatted_key)):
+            return key
+        return formatted_key
+
+    def open_spider(self, spider):
+        if spider: pass # avoid pep8 warnings
+
+    def close_spider(self, spider):
+        if spider: pass
+        self.db.close()
+
+    def process_item(self, item, spider):
+        if spider: pass # avoid pep8 warnings
+        page_url = item['page_url']
+        scrape_time = spider.scrape_time
+        for image_meta in item['images']:
+            self.db.add_sighting(page_url, scrape_time, image_meta)
+
+            # self.hashes.append(self.DHashTableEntry(page_url, img_url, img_dhash))
         return item

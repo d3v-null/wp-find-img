@@ -16,8 +16,13 @@ def main():
         required=True
     )
 
-    argParser.add_argument('--img_store',
+    argParser.add_argument('--img-store',
         help="location on disk where images are stored",
+        required=True
+    )
+
+    argParser.add_argument('--db-store',
+        help="location on disk of hash database",
         required=True
     )
 
@@ -40,6 +45,8 @@ def main():
             spider_args['start_urls'] = args.start_urls.split(',')
         if args.img_store:
             crawler_settings['IMAGES_STORE'] = args.img_store
+        if args.db_store:
+            crawler_settings['DB_STORE'] = args.db_store
 
     process = CrawlerProcess(crawler_settings)
     process.crawl(ImgSpider, **spider_args)

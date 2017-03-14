@@ -5,7 +5,7 @@ from scrapy.spiders import CrawlSpider
 from scrapy.spiders import Rule
 
 from context import wp_find_img
-from wp_find_img.helpers import URLHelpers
+from wp_find_img.helpers import URLHelpers, TimeHelpers
 
 # class ImgItem(scrapy.Item):
 #     src = scrapy.Field()
@@ -69,6 +69,8 @@ class ImgSpider(CrawlSpider):
         )
 
         self._compile_rules()
+
+        self.scrape_time = TimeHelpers.getSafeTimeStamp()
 
 
     # def parse_link(self, response):

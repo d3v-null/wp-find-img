@@ -1,4 +1,6 @@
 # -*- coding: utf-8 -*-
+import time
+
 from urlparse import urlparse, urlunparse
 from urlparse import urlsplit, urlunsplit
 from urlparse import ParseResult
@@ -7,7 +9,7 @@ from PIL import Image
 import tldextract
 
 class URLHelpers(object):
-    test=0
+    """ A set of helpers for URL stuff """
 
     @classmethod
     def only_domain(cls, url):
@@ -38,6 +40,44 @@ class URLHelpers(object):
     def within_domain(cls, url, domain):
         url_domain = cls.only_domain(url)
         return url_domain == domain
+
+#
+
+class TimeHelpers:
+    """ A set of helpers for time stuff """
+
+    safeTimeFormat = "%Y-%m-%d_%H-%M-%S"
+
+    @classmethod
+    def starStrptime(cls, string, fmt=None ):
+        if fmt==None:
+            fmt=cls.safeTimeFormat
+        string = unicode(string)
+        response = 0
+        if(string):
+            tstruct = time.strptime(string, fmt)
+            if(tstruct):
+                response = time.mktime(tstruct)
+        return response
+
+    @classmethod
+    def safeStrpTime(cls, string):
+        return cls.starStrptime(string, cls.safeTimeFormat)
+
+    @classmethod
+    def safeTimeToString(cls, t, fmt=None):
+        if fmt==None:
+            fmt = cls.safeTimeFormat
+        return time.strftime(fmt, time.localtime(t))
+
+    @classmethod
+    def hasHappenedYet(cls, t):
+        assert isinstance(t, (int, float)), "param must be an int not %s"% type(t)
+        return t >= time.time()
+
+    @classmethod
+    def getSafeTimeStamp(cls):
+        return time.strftime(cls.safeTimeFormat)
 
 # borrowed from here: http://blog.iconfinder.com/detecting-duplicate-images-using-python/
 
